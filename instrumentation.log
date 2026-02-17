@@ -1,0 +1,141 @@
+=== Function Metadata ===
+
+Class: MatchingEngine
+
+  Function: addOrder
+  UUID: 8KGyw9TlT1prfI2eDxorPA
+  Description: Main entry point for processing incoming orders through the matching engine. Business logic: Routes buy and sell orders to their respective matching algorithms. After matching attempts, handles unfilled quantity based on order type: LIMIT orders with remaining quantity are added to the order book to rest at their specified price; MARKET orders with remaining quantity trigger a warning as they indicate insufficient liquidity (market orders should fill immediately or be rejected). This two-phase approach (match first, then rest) ensures orders receive immediate execution when possible while maintaining a resting book for price discovery.
+
+  Function: recordExecutionReport
+  UUID: 5_al9qe4TF2eDxorPE1eaw
+  Description: Records an execution report to the execution reports list. Business logic: Captures all order lifecycle events including fills, partial fills, and cancellations for audit trail and regulatory compliance. Each execution report documents a state change in an order's lifecycle with timestamp-ordered sequencing critical for trade reconstruction and dispute resolution.
+
+  Function: matchBuyOrder
+  UUID: obLD1OX2Slt8jZ4PGis8TQ
+  Description: Attempts to match an incoming buy order against resting sell orders using price-time priority. Business logic: Continuously retrieves the best (lowest) sell order from the book while the buy order has remaining quantity. For LIMIT buy orders, matching stops when the best sell price exceeds the buy limit price (buyer's maximum price constraint). For MARKET buy orders, matching continues until either fully filled or no sell orders remain. Each successful match executes at the resting sell order's price (price priority favors the maker). Fully filled sell orders are removed from the book after execution. This implements aggressive taking behavior where the incoming order 'walks the book' consuming liquidity at progressively worse prices until filled or stopped.
+
+  Function: matchSellOrder
+  UUID: ssPU5fanS1yNng8aKzxNXg
+  Description: Attempts to match an incoming sell order against resting buy orders using price-time priority. Business logic: Continuously retrieves the best (highest) buy order from the book while the sell order has remaining quantity. For LIMIT sell orders, matching stops when the best buy price falls below the sell limit price (seller's minimum price constraint). For MARKET sell orders, matching continues until either fully filled or no buy orders remain. Each successful match executes at the resting buy order's price (price priority favors the maker). Fully filled buy orders are removed from the book after execution. This implements aggressive taking behavior where the incoming order 'walks the book' consuming liquidity at progressively worse prices until filled or stopped.
+
+  Function: executeMatch
+  UUID: w9Tl9qe4TF2eDxorPE1ebw
+  Description: Executes a trade between an incoming order and a resting order, generating execution reports. Business logic: Calculates fill quantity as the minimum of both orders' remaining quantities, enabling partial fills. Updates both orders' cumulative and remaining quantities atomically. Execution occurs at the resting order's price (maker price), following standard price-time priority where the order already in the book gets price priority. Generates two execution reports (one for each side) with the same price and quantity but different cumulative quantities reflecting each order's total filled amount. These reports are essential for trade confirmation, position tracking, and regulatory reporting. Each match represents an atomic transaction ensuring both sides agree on price and quantity.
+
+Class: OrderBook
+
+  Function: addOrder
+  UUID: -KmwwdLjT1prfI2eDxorPA
+  Description: Inserts an unfilled or partially filled order into the order book. Business logic: Orders are organized by price level, with each price level maintaining a FIFO queue. The buy side uses descending order (highest price first) while the sell side uses ascending order (lowest price first). If no orders exist at the given price, creates a new LinkedList for that price level. This structure enables efficient best price lookups and time-priority matching within each price level.
+
+  Function: getBestSell
+  UUID: sMHS4_SlS1yNng8aKzxNXg
+  Description: Retrieves the first order at the lowest sell price (best ask). Business logic: Used by the matching engine to find the best counter-order for incoming buy orders. Returns the head of the FIFO queue at the best ask price level, ensuring time priority. Returns null if the sell side is empty or the price level queue is empty. This is called repeatedly during matching to process orders in price-time priority.
+
+  Function: removeOrder
+  UUID: 4_SltsfYTl8aKzxNXm96iw
+  Description: Removes a fully filled order from the book and performs cleanup. Business logic: Locates the order at its price level and removes it from the FIFO queue. If the removal leaves the price level empty (no more orders at that price), the entire price level entry is removed from the TreeMap to prevent memory leaks and maintain efficient tree structure. Called by the matching engine after each order is fully filled. Critical for maintaining book accuracy and preventing re-matching of filled orders.
+
+  Function: getBestBuy
+  UUID: qbDB0uP0Slt8jZ4PGis8TQ
+  Description: Retrieves the first order at the highest buy price (best bid). Business logic: Used by the matching engine to find the best counter-order for incoming sell orders. Returns the head of the FIFO queue at the best bid price level, ensuring time priority. Returns null if the buy side is empty or the price level queue is empty. This is called repeatedly during matching to process orders in price-time priority.
+
+=== Execution Trace ===
+
+2026-02-16T00:52:31.398106Z | VQ6EAOKbQdSnFkRmVUQAAA | ORDER_IN | VQ6EAOKbQdSnFkRmVUQAAA | BUY | LIMIT | qty=10 | price=100.50
+2026-02-16T00:52:31.401083Z | VQ6EAOKbQdSnFkRmVUQAAA | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.401448Z | VQ6EAOKbQdSnFkRmVUQAAA |   CALL | obLD1OX2Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.401567Z | VQ6EAOKbQdSnFkRmVUQAAA |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.401676Z | VQ6EAOKbQdSnFkRmVUQAAA |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.401779Z | VQ6EAOKbQdSnFkRmVUQAAA |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQAAA | BUY | price=100.50 | remainingQty=10 | cumQty=0
+2026-02-16T00:52:31.402976Z | VQ6EAOKbQdSnFkRmVUQAAA | SNAPSHOT | Buy: [100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: []
+2026-02-16T00:52:31.403311Z | VQ6EAOKbQdSnFkRmVUQAAQ | ORDER_IN | VQ6EAOKbQdSnFkRmVUQAAQ | SELL | LIMIT | qty=5 | price=100.75
+2026-02-16T00:52:31.403347Z | VQ6EAOKbQdSnFkRmVUQAAQ | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.403382Z | VQ6EAOKbQdSnFkRmVUQAAQ |   CALL | ssPU5fanS1yNng8aKzxNXg
+2026-02-16T00:52:31.403449Z | VQ6EAOKbQdSnFkRmVUQAAQ |     CALL | qbDB0uP0Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.403518Z | VQ6EAOKbQdSnFkRmVUQAAQ |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.403552Z | VQ6EAOKbQdSnFkRmVUQAAQ |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQAAQ | SELL | price=100.75 | remainingQty=5 | cumQty=0
+2026-02-16T00:52:31.403619Z | VQ6EAOKbQdSnFkRmVUQAAQ | SNAPSHOT | Buy: [100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.75@VQ6EAOKbQdSnFkRmVUQAAQ:5]
+2026-02-16T00:52:31.403670Z | VQ6EAOKbQdSnFkRmVUQAAg | ORDER_IN | VQ6EAOKbQdSnFkRmVUQAAg | BUY | LIMIT | qty=15 | price=100.60
+2026-02-16T00:52:31.403693Z | VQ6EAOKbQdSnFkRmVUQAAg | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.403724Z | VQ6EAOKbQdSnFkRmVUQAAg |   CALL | obLD1OX2Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.403751Z | VQ6EAOKbQdSnFkRmVUQAAg |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.403792Z | VQ6EAOKbQdSnFkRmVUQAAg |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.403821Z | VQ6EAOKbQdSnFkRmVUQAAg |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQAAg | BUY | price=100.60 | remainingQty=15 | cumQty=0
+2026-02-16T00:52:31.403897Z | VQ6EAOKbQdSnFkRmVUQAAg | SNAPSHOT | Buy: [100.60@VQ6EAOKbQdSnFkRmVUQAAg:15, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.75@VQ6EAOKbQdSnFkRmVUQAAQ:5]
+2026-02-16T00:52:31.403956Z | VQ6EAOKbQdSnFkRmVUQAAw | ORDER_IN | VQ6EAOKbQdSnFkRmVUQAAw | SELL | LIMIT | qty=8 | price=100.55
+2026-02-16T00:52:31.403997Z | VQ6EAOKbQdSnFkRmVUQAAw | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.404029Z | VQ6EAOKbQdSnFkRmVUQAAw |   CALL | ssPU5fanS1yNng8aKzxNXg
+2026-02-16T00:52:31.404057Z | VQ6EAOKbQdSnFkRmVUQAAw |     CALL | qbDB0uP0Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.404096Z | VQ6EAOKbQdSnFkRmVUQAAw |     CALL | w9Tl9qe4TF2eDxorPE1ebw
+2026-02-16T00:52:31.404334Z | VQ6EAOKbQdSnFkRmVUQAAw |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.404495Z | VQ6EAOKbQdSnFkRmVUQAAw |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQAAw | SELL | FULL_FILL | qty=8 | lastQty=8 | cumQty=8 | price=100.60
+2026-02-16T00:52:31.405101Z | VQ6EAOKbQdSnFkRmVUQAAw |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.405136Z | VQ6EAOKbQdSnFkRmVUQAAw |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQAAg | BUY | PARTIAL_FILL | qty=15 | lastQty=8 | cumQty=8 | price=100.60
+2026-02-16T00:52:31.405217Z | VQ6EAOKbQdSnFkRmVUQAAw | SNAPSHOT | Buy: [100.60@VQ6EAOKbQdSnFkRmVUQAAg:7, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.75@VQ6EAOKbQdSnFkRmVUQAAQ:5]
+2026-02-16T00:52:31.405264Z | VQ6EAOKbQdSnFkRmVUQABA | ORDER_IN | VQ6EAOKbQdSnFkRmVUQABA | BUY | MARKET | qty=12 | price=
+2026-02-16T00:52:31.405293Z | VQ6EAOKbQdSnFkRmVUQABA | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.405334Z | VQ6EAOKbQdSnFkRmVUQABA |   CALL | obLD1OX2Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.405362Z | VQ6EAOKbQdSnFkRmVUQABA |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.405398Z | VQ6EAOKbQdSnFkRmVUQABA |     CALL | w9Tl9qe4TF2eDxorPE1ebw
+2026-02-16T00:52:31.405441Z | VQ6EAOKbQdSnFkRmVUQABA |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.405471Z | VQ6EAOKbQdSnFkRmVUQABA |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQABA | BUY | PARTIAL_FILL | qty=12 | lastQty=5 | cumQty=5 | price=100.75
+2026-02-16T00:52:31.405508Z | VQ6EAOKbQdSnFkRmVUQABA |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.405538Z | VQ6EAOKbQdSnFkRmVUQABA |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQAAQ | SELL | FULL_FILL | qty=5 | lastQty=5 | cumQty=5 | price=100.75
+2026-02-16T00:52:31.405599Z | VQ6EAOKbQdSnFkRmVUQABA |     CALL | 4_SltsfYTl8aKzxNXm96iw
+2026-02-16T00:52:31.405668Z | VQ6EAOKbQdSnFkRmVUQABA |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.405709Z | VQ6EAOKbQdSnFkRmVUQABA |   CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.405742Z | VQ6EAOKbQdSnFkRmVUQABA |     EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQABA | BUY | CANCEL | qty=12 | lastQty=7 | cumQty=5 | price=
+2026-02-16T00:52:31.405801Z | VQ6EAOKbQdSnFkRmVUQABA | SNAPSHOT | Buy: [100.60@VQ6EAOKbQdSnFkRmVUQAAg:7, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: []
+2026-02-16T00:52:31.405844Z | VQ6EAOKbQdSnFkRmVUQABQ | ORDER_IN | VQ6EAOKbQdSnFkRmVUQABQ | SELL | LIMIT | qty=20 | price=100.70
+2026-02-16T00:52:31.405865Z | VQ6EAOKbQdSnFkRmVUQABQ | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.405891Z | VQ6EAOKbQdSnFkRmVUQABQ |   CALL | ssPU5fanS1yNng8aKzxNXg
+2026-02-16T00:52:31.405919Z | VQ6EAOKbQdSnFkRmVUQABQ |     CALL | qbDB0uP0Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.405955Z | VQ6EAOKbQdSnFkRmVUQABQ |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.406075Z | VQ6EAOKbQdSnFkRmVUQABQ |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQABQ | SELL | price=100.70 | remainingQty=20 | cumQty=0
+2026-02-16T00:52:31.406149Z | VQ6EAOKbQdSnFkRmVUQABQ | SNAPSHOT | Buy: [100.60@VQ6EAOKbQdSnFkRmVUQAAg:7, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.70@VQ6EAOKbQdSnFkRmVUQABQ:20]
+2026-02-16T00:52:31.406239Z | VQ6EAOKbQdSnFkRmVUQABg | ORDER_IN | VQ6EAOKbQdSnFkRmVUQABg | BUY | LIMIT | qty=7 | price=100.65
+2026-02-16T00:52:31.406262Z | VQ6EAOKbQdSnFkRmVUQABg | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.406290Z | VQ6EAOKbQdSnFkRmVUQABg |   CALL | obLD1OX2Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.406317Z | VQ6EAOKbQdSnFkRmVUQABg |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.406356Z | VQ6EAOKbQdSnFkRmVUQABg |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.406385Z | VQ6EAOKbQdSnFkRmVUQABg |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQABg | BUY | price=100.65 | remainingQty=7 | cumQty=0
+2026-02-16T00:52:31.406471Z | VQ6EAOKbQdSnFkRmVUQABg | SNAPSHOT | Buy: [100.65@VQ6EAOKbQdSnFkRmVUQABg:7, 100.60@VQ6EAOKbQdSnFkRmVUQAAg:7, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.70@VQ6EAOKbQdSnFkRmVUQABQ:20]
+2026-02-16T00:52:31.406515Z | VQ6EAOKbQdSnFkRmVUQABw | ORDER_IN | VQ6EAOKbQdSnFkRmVUQABw | SELL | MARKET | qty=10 | price=
+2026-02-16T00:52:31.406538Z | VQ6EAOKbQdSnFkRmVUQABw | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.406566Z | VQ6EAOKbQdSnFkRmVUQABw |   CALL | ssPU5fanS1yNng8aKzxNXg
+2026-02-16T00:52:31.406593Z | VQ6EAOKbQdSnFkRmVUQABw |     CALL | qbDB0uP0Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.406637Z | VQ6EAOKbQdSnFkRmVUQABw |     CALL | w9Tl9qe4TF2eDxorPE1ebw
+2026-02-16T00:52:31.406681Z | VQ6EAOKbQdSnFkRmVUQABw |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.406712Z | VQ6EAOKbQdSnFkRmVUQABw |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQABw | SELL | PARTIAL_FILL | qty=10 | lastQty=7 | cumQty=7 | price=100.65
+2026-02-16T00:52:31.406753Z | VQ6EAOKbQdSnFkRmVUQABw |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.406787Z | VQ6EAOKbQdSnFkRmVUQABw |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQABg | BUY | FULL_FILL | qty=7 | lastQty=7 | cumQty=7 | price=100.65
+2026-02-16T00:52:31.406830Z | VQ6EAOKbQdSnFkRmVUQABw |     CALL | 4_SltsfYTl8aKzxNXm96iw
+2026-02-16T00:52:31.406865Z | VQ6EAOKbQdSnFkRmVUQABw |     CALL | qbDB0uP0Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.406897Z | VQ6EAOKbQdSnFkRmVUQABw |     CALL | w9Tl9qe4TF2eDxorPE1ebw
+2026-02-16T00:52:31.406926Z | VQ6EAOKbQdSnFkRmVUQABw |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.406954Z | VQ6EAOKbQdSnFkRmVUQABw |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQABw | SELL | FULL_FILL | qty=10 | lastQty=3 | cumQty=10 | price=100.60
+2026-02-16T00:52:31.406989Z | VQ6EAOKbQdSnFkRmVUQABw |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.407021Z | VQ6EAOKbQdSnFkRmVUQABw |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQAAg | BUY | PARTIAL_FILL | qty=15 | lastQty=3 | cumQty=11 | price=100.60
+2026-02-16T00:52:31.407095Z | VQ6EAOKbQdSnFkRmVUQABw | SNAPSHOT | Buy: [100.60@VQ6EAOKbQdSnFkRmVUQAAg:4, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.70@VQ6EAOKbQdSnFkRmVUQABQ:20]
+2026-02-16T00:52:31.407140Z | VQ6EAOKbQdSnFkRmVUQACA | ORDER_IN | VQ6EAOKbQdSnFkRmVUQACA | BUY | LIMIT | qty=25 | price=100.80
+2026-02-16T00:52:31.407161Z | VQ6EAOKbQdSnFkRmVUQACA | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.407195Z | VQ6EAOKbQdSnFkRmVUQACA |   CALL | obLD1OX2Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.407219Z | VQ6EAOKbQdSnFkRmVUQACA |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.407251Z | VQ6EAOKbQdSnFkRmVUQACA |     CALL | w9Tl9qe4TF2eDxorPE1ebw
+2026-02-16T00:52:31.407281Z | VQ6EAOKbQdSnFkRmVUQACA |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.407315Z | VQ6EAOKbQdSnFkRmVUQACA |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQACA | BUY | PARTIAL_FILL | qty=25 | lastQty=20 | cumQty=20 | price=100.70
+2026-02-16T00:52:31.407350Z | VQ6EAOKbQdSnFkRmVUQACA |       CALL | 5_al9qe4TF2eDxorPE1eaw
+2026-02-16T00:52:31.407382Z | VQ6EAOKbQdSnFkRmVUQACA |         EXEC_REPORT | VQ6EAOKbQdSnFkRmVUQABQ | SELL | FULL_FILL | qty=20 | lastQty=20 | cumQty=20 | price=100.70
+2026-02-16T00:52:31.407437Z | VQ6EAOKbQdSnFkRmVUQACA |     CALL | 4_SltsfYTl8aKzxNXm96iw
+2026-02-16T00:52:31.407473Z | VQ6EAOKbQdSnFkRmVUQACA |     CALL | sMHS4_SlS1yNng8aKzxNXg
+2026-02-16T00:52:31.407508Z | VQ6EAOKbQdSnFkRmVUQACA |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.407536Z | VQ6EAOKbQdSnFkRmVUQACA |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQACA | BUY | price=100.80 | remainingQty=5 | cumQty=20
+2026-02-16T00:52:31.407591Z | VQ6EAOKbQdSnFkRmVUQACA | SNAPSHOT | Buy: [100.80@VQ6EAOKbQdSnFkRmVUQACA:5, 100.60@VQ6EAOKbQdSnFkRmVUQAAg:4, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: []
+2026-02-16T00:52:31.407633Z | VQ6EAOKbQdSnFkRmVUQACQ | ORDER_IN | VQ6EAOKbQdSnFkRmVUQACQ | SELL | LIMIT | qty=5 | price=100.85
+2026-02-16T00:52:31.407658Z | VQ6EAOKbQdSnFkRmVUQACQ | CALL | 8KGyw9TlT1prfI2eDxorPA
+2026-02-16T00:52:31.407685Z | VQ6EAOKbQdSnFkRmVUQACQ |   CALL | ssPU5fanS1yNng8aKzxNXg
+2026-02-16T00:52:31.407710Z | VQ6EAOKbQdSnFkRmVUQACQ |     CALL | qbDB0uP0Slt8jZ4PGis8TQ
+2026-02-16T00:52:31.407755Z | VQ6EAOKbQdSnFkRmVUQACQ |   CALL | -KmwwdLjT1prfI2eDxorPA
+2026-02-16T00:52:31.407783Z | VQ6EAOKbQdSnFkRmVUQACQ |     BOOK_ADD | VQ6EAOKbQdSnFkRmVUQACQ | SELL | price=100.85 | remainingQty=5 | cumQty=0
+2026-02-16T00:52:31.407846Z | VQ6EAOKbQdSnFkRmVUQACQ | SNAPSHOT | Buy: [100.80@VQ6EAOKbQdSnFkRmVUQACA:5, 100.60@VQ6EAOKbQdSnFkRmVUQAAg:4, 100.50@VQ6EAOKbQdSnFkRmVUQAAA:10] Sell: [100.85@VQ6EAOKbQdSnFkRmVUQACQ:5]

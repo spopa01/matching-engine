@@ -41,8 +41,7 @@ pip-delete-this-directory.txt
 *.egg-info/
 
 # Generated files
-instrumentation.log
-executions.csv
+# (keeping sample files in repo for demonstration)
 
 # Claude files
 .claude/
