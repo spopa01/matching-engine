@@ -1,0 +1,4 @@
+llama-index-core
+llama-index-llms-anthropic
+llama-index-embeddings-openai
+anthropic
