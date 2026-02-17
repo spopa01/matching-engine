@@ -209,173 +209,443 @@ class MatchingEngineRAG:
     def query_code(self, query) -> str
     def query_both(self, query) -> str  # Synthesized answer''')
 
-    # Slide 10: RAG Examples - Instrumentation Only
-    add_content_slide(prs, "RAG Examples: Instrumentation Queries", [
-        "Query: 'What orders were executed and at what prices?'",
-        "  → Analyzes EXEC_REPORT events from instrumentation.log",
-        "  → Returns order IDs, execution types, quantities, and prices",
+    # Slide 10: RAG Query Categories
+    add_content_slide(prs, "RAG Query Categories", [
+        "Instrumentation Queries (/instr):",
+        "  • What happened? Execution traces, order flow, trade history",
+        "  • Debugging: Trace specific orders through the system",
+        "  • Analysis: Market microstructure, order book dynamics",
         "",
-        "Query: 'Show me the order book state after order VQ6EAOKbQdSnFkRmVUQAAA'",
-        "  → Finds SNAPSHOT event for that order ID",
-        "  → Shows buy/sell side price levels with quantities",
+        "Code Queries (/code):",
+        "  • How does it work? Algorithm details, data structures",
+        "  • Architecture: Component interactions, design patterns",
+        "  • Learning: Understand matching engine implementation",
         "",
-        "Query: 'Which orders had partial fills?'",
-        "  → Filters EXEC_REPORT events with executionType=PARTIAL_FILL",
-        "  → Lists orders with remaining quantities"
+        "Combined Queries (/both):",
+        "  • Why? Connect execution behavior to code logic",
+        "  • Validation: Verify implementation matches behavior",
+        "  • Deep analysis: Theory + practice together"
     ])
 
-    # Slide 11: RAG Examples - Code Only
-    add_content_slide(prs, "RAG Examples: Code Queries", [
-        "Query: 'How does the matching algorithm work?'",
-        "  → Retrieves MatchingEngine.java implementation",
-        "  → Explains executeMatch() logic and price-time priority",
+    # Slide 11: Detailed Q&A - Instrumentation Query #1
+    add_code_slide(prs, "Instrumentation Query #1: Order Execution",
+'''Question: "What orders were executed and at what prices?"
+
+Answer from RAG Pipeline (/instr):
+
+Based on the instrumentation log, the following executions occurred:
+
+1. Order VQ6EAOKbQdSnFkRmVUQAAw (SELL, 8 units)
+   • Execution: FULL_FILL at price 100.60
+   • Matched against order VQ6EAOKbQdSnFkRmVUQAAg (BUY)
+   • Buyer paid 100.60 (seller's limit was 100.55)
+
+2. Order VQ6EAOKbQdSnFkRmVUQAAg (BUY, 15 units)
+   • Execution: PARTIAL_FILL, 8 units filled at 100.60
+   • Remaining quantity: 7 units (stayed in book at 100.60)
+   • Cumulative filled: 8 units
+
+3. Order VQ6EAOKbQdSnFkRmVUQABA (BUY MARKET, 12 units)
+   • First fill: PARTIAL_FILL, 5 units at 100.75
+   • Matched against VQ6EAOKbQdSnFkRmVUQAAQ (SELL)
+   • Final: CANCEL with 7 units unfilled (insufficient liquidity)
+   • Total filled: 5 units at 100.75''')
+
+    # Slide 12: Detailed Q&A - Instrumentation Query #2
+    add_code_slide(prs, "Instrumentation Query #2: Order Book State",
+'''Question: "What was the order book state after order VQ6EAOKbQdSnFkRmVUQAAw?"
+
+Answer from RAG Pipeline (/instr):
+
+After processing order VQ6EAOKbQdSnFkRmVUQAAw (SELL LIMIT, 8 units at 100.55),
+the SNAPSHOT event shows:
+
+Buy Side (descending by price):
+  • 100.60: Order VQ6EAOKbQdSnFkRmVUQAAg with 7 units remaining
+    (originally 15, partially filled by VQ6EAOKbQdSnFkRmVUQAAw)
+  • 100.50: Order VQ6EAOKbQdSnFkRmVUQAAA with 10 units
+    (resting since first order, no matches yet)
+
+Sell Side (ascending by price):
+  • 100.75: Order VQ6EAOKbQdSnFkRmVUQAAQ with 5 units
+    (resting, waiting for buyers at that price)
+
+Key Insight: Order VQ6EAOKbQdSnFkRmVUQAAw fully executed against the
+best buy order (VQ6EAOKbQdSnFkRmVUQAAg at 100.60) because 100.60 ≥ 100.55.
+The seller got better price than their limit!''')
+
+    # Slide 13: Detailed Q&A - Instrumentation Query #3
+    add_code_slide(prs, "Instrumentation Query #3: Function Call Trace",
+'''Question: "What functions were called when processing order VQ6EAOKbQdSnFkRmVUQAAw?"
+
+Answer from RAG Pipeline (/instr):
+
+Call Stack Trace (indentation shows call depth):
+
+1. addOrder (8KGyw9TlT1prfI2eDxorPA) - Entry point
+  2. matchSellOrder (ssPU5fanS1yNng8aKzxNXg) - Match against buy side
+    3. getBestBuy (qbDB0uP0Slt8jZ4PGis8TQ) - Get best bid
+    3. executeMatch (w9Tl9qe4TF2eDxorPE1ebw) - Execute the trade
+      4. recordExecutionReport (5_al9qe4TF2eDxorPE1eaw) - Record seller report
+        → EXEC_REPORT: VQ6EAOKbQdSnFkRmVUQAAw FULL_FILL 8@100.60
+      4. recordExecutionReport (5_al9qe4TF2eDxorPE1eaw) - Record buyer report
+        → EXEC_REPORT: VQ6EAOKbQdSnFkRmVUQAAg PARTIAL_FILL 8@100.60
+  → SNAPSHOT: Updated order book state
+
+The function UUIDs map to specific methods via @FunctionMetadata annotations.
+This trace shows the complete execution path through the matching engine.''')
+
+    # Slide 14: Detailed Q&A - Code Query #1
+    add_code_slide(prs, "Code Query #1: Matching Algorithm",
+'''Question: "How does the price-time priority matching algorithm work?"
+
+Answer from RAG Pipeline (/code):
+
+The matching engine implements price-time priority through a two-level structure:
+
+1. Price Priority (TreeMap):
+   • Buy side: TreeMap with DESCENDING order (highest price first)
+   • Sell side: TreeMap with ASCENDING order (lowest price first)
+   • This ensures best bid/ask are always at firstEntry()
+
+2. Time Priority (LinkedList):
+   • Each price level contains a LinkedList<Order>
+   • Orders are added to the tail, removed from the head (FIFO)
+   • First order at a price level gets matched first
+
+Matching Logic (from MatchingEngine.executeMatch):
+   long fillQuantity = Math.min(
+       incomingOrder.getRemainingQuantity(),
+       restingOrder.getRemainingQuantity()
+   );
+   // Execute at resting order's price (maker price advantage)
+   BigDecimal executionPrice = restingOrder.getPrice();
+
+This ensures: Best prices matched first, then earliest orders within each price.''')
+
+    # Slide 15: Detailed Q&A - Code Query #2
+    add_code_slide(prs, "Code Query #2: Order Book Data Structure",
+'''Question: "Explain the OrderBook data structure and why TreeMap was chosen."
+
+Answer from RAG Pipeline (/code):
+
+OrderBook.java uses TreeMap for efficient price-level operations:
+
+private final TreeMap<BigDecimal, LinkedList<Order>> buySide;
+private final TreeMap<BigDecimal, LinkedList<Order>> sellSide;
+
+Constructor:
+  buySide = new TreeMap<>(Comparator.reverseOrder());  // Descending
+  sellSide = new TreeMap<>();  // Natural ascending order
+
+Why TreeMap?
+  • O(log n) insertion, deletion, and search
+  • firstEntry() gives best bid/ask in O(log n)
+  • Maintains sorted order automatically
+  • Efficient range queries for price levels
+
+Why LinkedList for each price level?
+  • O(1) insertion at tail (add new order)
+  • O(1) removal from head (match oldest order)
+  • Preserves time priority (FIFO) within price level
+  • No random access needed
+
+This combination provides optimal performance for matching operations.''')
+
+    # Slide 16: Detailed Q&A - Code Query #3
+    add_code_slide(prs, "Code Query #3: @FunctionMetadata Annotation",
+'''Question: "What is the @FunctionMetadata annotation and how is it used?"
+
+Answer from RAG Pipeline (/code):
+
+@FunctionMetadata is a custom annotation defined in the codebase:
+
+@Retention(RetentionPolicy.RUNTIME)  // Available at runtime
+@Target(ElementType.METHOD)          // Applied to methods
+public @interface FunctionMetadata {
+    String uuid();          // Unique Base64-encoded identifier
+    String functionName();  // Human-readable name
+    String description();   // Detailed business logic description
+}
+
+Usage Example (from MatchingEngine.java):
+
+@FunctionMetadata(
+    uuid = "w9Tl9qe4TF2eDxorPE1ebw",
+    functionName = "executeMatch",
+    description = "Executes a trade between an incoming order and a
+                   resting order, generating execution reports..."
+)
+private void executeMatch(Order incomingOrder, Order restingOrder)
+
+Benefits:
+  • Runtime introspection for instrumentation agent
+  • Stable UUID identification across refactoring
+  • Self-documenting code with business logic descriptions
+  • Enables automatic function metadata export to logs''')
+
+    # Slide 17: Detailed Q&A - Combined Query #1
+    add_code_slide(prs, "Combined Query #1: Order Processing Deep Dive",
+'''Question: "Explain exactly how order VQ6EAOKbQdSnFkRmVUQAAw was processed."
+
+Answer from RAG Pipeline (/both - Synthesized):
+
+Order Details (from instrumentation):
+  • VQ6EAOKbQdSnFkRmVUQAAw: SELL LIMIT, 8 units at 100.55
+
+Processing Flow (combining code + logs):
+
+1. Entry (MatchingEngine.addOrder - UUID: 8KGyw9TlT1prfI2eDxorPA):
+   Code shows: Routes SELL orders to matchSellOrder()
+   Log shows: CALL event at 2026-02-16T00:52:31.403997Z
+
+2. Matching (matchSellOrder - UUID: ssPU5fanS1yNng8aKzxNXg):
+   Code shows: Loops through buy side while remainingQty > 0
+               Stops when best buy price < sell limit price
+   Log shows: Called getBestBuy, found VQ6EAOKbQdSnFkRmVUQAAg at 100.60
+
+3. Price Check: 100.60 (best buy) ≥ 100.55 (sell limit) → CAN MATCH
+
+4. Execution (executeMatch - UUID: w9Tl9qe4TF2eDxorPE1ebw):
+   Code shows: fillQty = min(8, 15) = 8
+               executionPrice = 100.60 (resting order's price)
+   Log shows: Two EXEC_REPORT events generated
+
+5. Result: Seller filled all 8 units at 100.60 (better than 100.55 limit!)''')
+
+    # Slide 18: Detailed Q&A - Combined Query #2
+    add_code_slide(prs, "Combined Query #2: Market Order Behavior",
+'''Question: "Why did market order VQ6EAOKbQdSnFkRmVUQABA partially fill
+            then cancel?"
+
+Answer from RAG Pipeline (/both - Synthesized):
+
+Order Details:
+  • VQ6EAOKbQdSnFkRmVUQABA: BUY MARKET, 12 units, no price limit
+
+Code Logic (MatchingEngine.matchBuyOrder):
+  For MARKET orders:
+    • Continue matching while remainingQuantity > 0 AND sellSide not empty
+    • No price check (market orders accept any price)
+    • If unfilled after exhausting liquidity → CANCEL
+
+Execution Trace (from logs):
+  1. sMHS4_SlS1yNng8aKzxNXg (getBestSell) → Found VQ6EAOKbQdSnFkRmVUQAAQ
+  2. executeMatch → Filled 5 units at 100.75
+     EXEC_REPORT: PARTIAL_FILL, cumQty=5, remaining=7
+  3. removeOrder (4_SltsfYTl8aKzxNXm96iw) → Removed fully filled sell order
+  4. sMHS4_SlS1yNng8aKzxNXg → No more sell orders (returns null)
+  5. recordExecutionReport → CANCEL with lastQty=7 (unfilled)
+
+Why CANCEL?
+  Code shows: Market orders with remaining quantity log a warning and
+              generate CANCEL execution report (insufficient liquidity)
+  This prevents market orders from resting in the book.''')
+
+    # Slide 19: Detailed Q&A - Combined Query #3
+    add_code_slide(prs, "Combined Query #3: Price Improvement Analysis",
+'''Question: "Show me examples where orders got better prices than their limits."
+
+Answer from RAG Pipeline (/both - Synthesized):
+
+Price Improvement Mechanism (from code):
+  In executeMatch(), execution price = restingOrder.getPrice()
+  This gives "maker price advantage" - the resting order's price is used.
+
+Example from Logs:
+
+Order VQ6EAOKbQdSnFkRmVUQAAw:
+  • Placed: SELL LIMIT at 100.55 (willing to sell at this price or higher)
+  • Matched: Against buy order at 100.60
+  • Executed: At 100.60 (0.05 price improvement!)
+  • Reason: Buyer was resting at 100.60, so seller got the better price
+
+Why This Happens:
+  Code (matchSellOrder): Checks if bestBuyPrice >= sellLimitPrice
+  • If 100.60 >= 100.55 → MATCH at 100.60 (resting buy order's price)
+  • Seller benefits from buyer's higher limit price
+  • This rewards liquidity providers (makers) over takers
+
+Price-Time Priority:
+  1. Best prices matched first (price priority)
+  2. Within price level, oldest orders first (time priority)
+  3. Execution at resting order's price (maker advantage)''')
+
+    # Slide 20: RAG Query Capabilities Summary
+    add_content_slide(prs, "RAG Query Capabilities Summary", [
+        "Instrumentation Queries Answer:",
+        "  • What happened? (execution history, order flow)",
+        "  • When? (timestamps, sequence of events)",
+        "  • Who? (specific order IDs and their journey)",
         "",
-        "Query: 'What is the order book data structure?'",
-        "  → Analyzes OrderBook.java",
-        "  → Describes TreeMap structure for buy/sell sides",
+        "Code Queries Answer:",
+        "  • How does it work? (algorithms, data structures)",
+        "  • Why this design? (architecture decisions)",
+        "  • What are the rules? (business logic, validations)",
         "",
-        "Query: 'Explain the executeMatch function'",
-        "  → Retrieves method implementation",
-        "  → Explains matching logic, fill calculations, and report generation"
+        "Combined Queries Answer:",
+        "  • Why did X happen? (connect behavior to code)",
+        "  • Is the implementation correct? (verify against spec)",
+        "  • How would Y be different? (counterfactual analysis)",
+        "  • Teach me by example (theory + real execution traces)"
     ])
 
-    # Slide 12: RAG Examples - Both Sources
-    add_content_slide(prs, "RAG Examples: Combined Queries", [
-        "Query: 'How did the matching engine process market orders?'",
-        "  → Code: Explains market order matching logic",
-        "  → Logs: Shows actual market order executions",
-        "  → Synthesized: Theory + Practice together",
-        "",
-        "Query: 'Explain what happened when order VQ6EAOKbQdSnFkRmVUQABA was processed'",
-        "  → Logs: Complete execution trace with all events",
-        "  → Code: Function implementations that were called",
-        "  → Synthesized: Step-by-step explanation with code context",
-        "",
-        "Query: 'What is price-time priority and how is it implemented?'",
-        "  → Code: OrderBook structure and matching algorithm",
-        "  → Logs: Real examples showing FIFO ordering in SNAPSHOT events",
-        "  → Synthesized: Concept + Implementation + Evidence"
-    ])
+    # Slide 21: Additional Query Examples
+    add_code_slide(prs, "More RAG Query Examples",
+'''Debugging Queries:
+  • "Which orders are still resting in the book?"
+  • "Why didn't order X match with order Y?"
+  • "Show me all partial fills and their cumulative quantities"
+  • "What was the spread (best bid - best ask) after order Z?"
 
-    # Slide 13: Sample RAG Query Flow
-    add_code_slide(prs, "Sample RAG Query: Combined Analysis",
+Architecture Queries:
+  • "How does the system prevent race conditions?"
+  • "What happens if two orders arrive at the same price?"
+  • "Explain the relationship between Order and ExecutionReport"
+
+Performance Analysis:
+  • "How many function calls does a simple match require?"
+  • "What is the complexity of adding an order to the book?"
+  • "Show me the call depth for order VQ6EAOKbQdSnFkRmVUQAAw"
+
+Compliance & Audit:
+  • "Show complete audit trail for order VQ6EAOKbQdSnFkRmVUQABA"
+  • "Were there any price improvements in the execution log?"
+  • "Verify all executions follow price-time priority"''')
+
+    # Slide 22: Sample RAG Query Flow
+    add_code_slide(prs, "RAG Query Flow: Under the Hood",
 '''Query: "Explain order VQ6EAOKbQdSnFkRmVUQAAw processing"
 
 Step 1: Query Instrumentation Index
-→ Finds: ORDER_IN, CALL events, EXEC_REPORT, BOOK_ADD, SNAPSHOT
-→ Result: "Order was a SELL LIMIT for 8 units at 100.60,
-   fully filled against existing buy order"
+  • Vector search finds relevant log sections
+  • Retrieved: ORDER_IN, CALL events, EXEC_REPORT, SNAPSHOT
+  • Context: "SELL LIMIT, 8 units at 100.55, matched at 100.60"
 
 Step 2: Query Code Index
-→ Finds: MatchingEngine.addOrder(), OrderBook.matchAgainstSide()
-→ Result: "addOrder() calls matchAgainstSide() which iterates
-   through opposite side price levels..."
+  • Semantic search on Java source files
+  • Retrieved: MatchingEngine.addOrder(), matchSellOrder(), executeMatch()
+  • Context: Function implementations and business logic descriptions
 
-Step 3: Synthesize with Claude
-→ Combines both contexts
-→ Result: "Order VQ6EAOKbQdSnFkRmVUQAAw was a SELL LIMIT order.
-   The MatchingEngine.addOrder() method (UUID: 8KGyw9TlT1prfI2eDxorPA)
-   received it and called matchAgainstSide() to find matching buy orders.
-   It matched against order VQ6EAOKbQdSnFkRmVUQAAA at price 100.60,
-   resulting in a FULL_FILL execution report with 8 units traded."''')
+Step 3: Synthesize with Claude Opus 4
+  • Combines both contexts into coherent narrative
+  • Cross-references function UUIDs with actual calls
+  • Explains why execution price (100.60) differed from limit (100.55)
 
-    # Slide 14: Use Cases and Benefits
+Result: Comprehensive answer explaining WHAT happened (logs),
+HOW it works (code), and WHY (price improvement, maker advantage).
+
+The RAG pipeline acts as an AI assistant that understands both
+your code and its runtime behavior.''')
+
+    # Slide 23: Use Cases and Benefits
     add_content_slide(prs, "Use Cases & Benefits", [
         "Debugging: Trace order execution paths with AI assistance",
+        "  • 'Why didn't my order match?' - Get immediate answers",
         "Auditing: Query historical execution patterns and anomalies",
+        "  • 'Show all price improvements today' - Compliance reporting",
         "Education: Learn how matching engines work through examples",
+        "  • Students can ask questions about real executions",
         "Documentation: Natural language search through code and logs",
+        "  • No need to grep through thousands of log lines",
         "Performance Analysis: Identify bottlenecks from execution traces",
-        "Compliance: Answer regulatory questions about order handling",
-        "Testing: Verify behavior matches implementation expectations"
+        "  • 'What's the average call depth?' - Optimization insights",
+        "Testing: Verify behavior matches implementation expectations",
+        "  • 'Did order X follow price-time priority?' - Validation"
     ])
 
-    # Slide 15: Technology Stack
+    # Slide 24: Technology Stack
     add_content_slide(prs, "Technology Stack", [
-        "Core Engine: Java 17, Maven",
+        "Core Engine: Java 17, Maven 3.6+",
         "Data Structures: TreeMap (order book), LinkedList (FIFO)",
         "Instrumentation: Byte Buddy 1.14.11, Java Agent API",
-        "Build Tool: Maven 3.6+",
         "RAG Framework: LlamaIndex 0.14+",
-        "LLM: Anthropic Claude Opus 4",
+        "LLM: Anthropic Claude Opus 4 (claude-opus-4-20250514)",
         "Embeddings: OpenAI text-embedding-3-small",
-        "Language: Python 3.12+ for RAG pipeline"
+        "Python: 3.12+ for RAG pipeline",
+        "CSV I/O: Standard Java libraries (no external dependencies)"
     ])
 
-    # Slide 16: Key Innovations
+    # Slide 25: Key Innovations
     add_content_slide(prs, "Key Innovations", [
-        "UUID-Based Function Identification: Stable across refactoring",
-        "Metadata-Driven Instrumentation: Self-documenting code",
-        "Zero-Overhead Instrumentation: Agent can be disabled in production",
-        "Dual-Index RAG: Query both 'what happened' and 'how it works'",
-        "Context Propagation: Thread-local order ID tracking",
-        "Semantic Search: Natural language queries on technical content",
-        "Base64 UUID Encoding: Compact 22-character identifiers"
+        "UUID-Based Function Identification:",
+        "  • Stable across code refactoring, Base64 encoded (22 chars)",
+        "Metadata-Driven Instrumentation:",
+        "  • @FunctionMetadata self-documents business logic",
+        "Zero-Overhead Option:",
+        "  • Java agent can be disabled in production (no performance impact)",
+        "Dual-Index RAG:",
+        "  • Separate indices for 'what happened' vs 'how it works'",
+        "Context Propagation:",
+        "  • Thread-local tracking maintains order ID across call stack",
+        "AI-Powered Analysis:",
+        "  • Natural language queries on technical execution traces",
+        "Complete Audit Trail:",
+        "  • Every event captured: ORDER_IN → CALL → EXEC_REPORT → SNAPSHOT"
     ])
 
-    # Slide 17: Demo Flow
+    # Slide 26: Demo Flow
     add_content_slide(prs, "Demo: End-to-End Workflow", [
-        "1. Add orders to orders.csv (BUY/SELL, LIMIT/MARKET)",
-        "2. Run matching engine with instrumentation agent",
-        "3. Generate executions.csv with trade results",
-        "4. Generate instrumentation.log with detailed traces",
-        "5. Start RAG pipeline: python3 rag_query.py",
-        "6. Ask questions about execution and implementation",
-        "7. Get AI-powered answers with code and log context"
+        "1. Prepare: Create orders.csv with sample orders",
+        "2. Build: mvn clean package (engine + agent)",
+        "3. Run with Instrumentation:",
+        "   java -javaagent:agent/target/matching-agent-1.0-SNAPSHOT.jar \\",
+        "        -jar target/matching-engine-1.0-SNAPSHOT.jar",
+        "4. Output: executions.csv + instrumentation.log generated",
+        "5. Start RAG: python3 rag_query.py",
+        "6. Query: Ask natural language questions",
+        "7. Analyze: Get AI-powered insights combining code + execution"
     ])
 
-    # Slide 18: Example Questions
-    add_code_slide(prs, "Example RAG Questions",
-'''Instrumentation Queries (/instr):
-• What orders were added to the order book?
-• Show execution reports for order VQ6EAOKbQdSnFkRmVUQAAA
-• What was the order book state after the second order?
-• Which function UUIDs were called during processing?
-
-Code Queries (/code):
-• How does OrderBook.addOrder() work?
-• What is the ExecutionReport data structure?
-• Explain the matchAgainstSide() algorithm
-• What annotations are used in the codebase?
-
-Combined Queries (/both):
-• Why did order X partially fill? (needs both logs + code)
-• How does the system handle market orders? (theory + practice)
-• Trace the execution path for order Y (logs + function code)
-• What is the difference between FULL_FILL and PARTIAL_FILL?
-  (code + examples)''')
-
-    # Slide 19: Performance & Scalability
+    # Slide 27: Performance & Scalability
     add_content_slide(prs, "Performance & Scalability", [
-        "Matching Engine: O(log n) order insertion/matching",
-        "Instrumentation: <5% overhead when enabled, 0% when disabled",
-        "RAG Indexing: One-time cost, ~2 seconds for sample data",
-        "RAG Queries: 2-5 seconds depending on complexity",
-        "Embeddings: Cached locally, minimal API calls",
-        "LLM Costs: ~$0.01-0.05 per query (Claude Opus pricing)",
-        "Scalable: Can index thousands of log lines and source files"
+        "Matching Engine:",
+        "  • O(log n) insertion, O(log n) best price lookup (TreeMap)",
+        "  • O(1) FIFO queue operations (LinkedList)",
+        "Instrumentation:",
+        "  • <5% overhead when enabled",
+        "  • 0% overhead when disabled (just don't use -javaagent)",
+        "RAG Pipeline:",
+        "  • Indexing: One-time cost, ~2-5 seconds for sample data",
+        "  • Queries: 2-5 seconds per query (depends on complexity)",
+        "  • Embeddings: Cached locally after first generation",
+        "  • Cost: ~$0.01-0.05 per query (Claude Opus 4 pricing)",
+        "Scalability: Can handle thousands of log lines and dozens of files"
     ])
 
-    # Slide 20: Future Enhancements
+    # Slide 28: Future Enhancements
     add_content_slide(prs, "Future Enhancements", [
-        "Real-time streaming of instrumentation events",
-        "WebSocket-based live RAG queries during execution",
-        "Visual order book snapshots in RAG responses",
-        "Multi-symbol support with symbol-specific indices",
-        "Performance profiling integration (CPU, memory metrics)",
-        "Automated test generation from execution traces",
-        "Comparison queries: 'How did order X differ from order Y?'"
+        "Real-Time Features:",
+        "  • Streaming instrumentation events (Kafka/RabbitMQ)",
+        "  • Live RAG queries during execution (WebSocket)",
+        "Enhanced Visualization:",
+        "  • Order book depth charts in RAG responses",
+        "  • Execution timeline visualizations",
+        "Multi-Symbol Trading:",
+        "  • Symbol-specific indices for cross-symbol analysis",
+        "  • Market-wide queries across all symbols",
+        "Advanced Analytics:",
+        "  • Performance profiling (CPU, memory, latency)",
+        "  • Automated test case generation from traces",
+        "  • Anomaly detection using AI on execution patterns"
     ])
 
-    # Slide 21: Conclusion
+    # Slide 29: Conclusion
     add_content_slide(prs, "Conclusion", [
-        "Comprehensive matching engine with production-ready features",
-        "Innovative instrumentation approach using annotations + bytecode",
-        "Powerful RAG pipeline for code and execution analysis",
-        "AI-powered natural language queries on technical content",
-        "Open source and ready to extend",
+        "✓ Production-Ready Matching Engine:",
+        "  • Price-time priority, partial fills, market/limit orders",
+        "✓ Innovative Instrumentation:",
+        "  • @FunctionMetadata annotations + Byte Buddy bytecode manipulation",
+        "  • Complete audit trail with zero code changes to core engine",
+        "✓ AI-Powered RAG Pipeline:",
+        "  • Natural language queries on both code and execution traces",
+        "  • Claude Opus 4 synthesizes answers from dual indices",
+        "✓ Educational Value:",
+        "  • Learn matching engines through real examples",
+        "  • Debugging and analysis with AI assistance",
+        "",
         "GitHub: https://github.com/spopa01/matching-engine",
-        "Demonstrates synergy between traditional systems and modern AI"
+        "Demonstrates powerful synergy: Traditional Systems + Modern AI"
     ])
 
     # Save presentation
