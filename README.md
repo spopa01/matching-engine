@@ -22,8 +22,10 @@ engine/
 ├── agent/                           # Java instrumentation agent
 │   └── src/main/java/com/matching/
 │       └── agent/                   # Byte Buddy instrumentation
-├── rag_query.py                     # RAG pipeline for log analysis
-├── RAG_README.md                    # RAG pipeline documentation
+├── benchmarks/                      # Benchmark scripts and order generation
+├── rag/                             # RAG pipeline for log and code analysis
+│   ├── rag_query.py                 # Interactive RAG CLI
+│   └── requirements.txt             # Python dependencies
 └── orders.csv                       # Sample order input file
 ```
 
@@ -60,24 +62,6 @@ java -javaagent:agent/target/matching-agent-1.0-SNAPSHOT.jar \
 
 This generates `instrumentation.log` with detailed execution traces.
 
-## RAG Pipeline
-
-Query both execution logs and source code using AI:
-
-```bash
-# Install dependencies
-pip3 install -r requirements.txt
-
-# Set API keys
-export ANTHROPIC_API_KEY='your-key'
-export OPENAI_API_KEY='your-key'
-
-# Run interactive query interface
-python3 rag_query.py
-```
-
-See [RAG_README.md](RAG_README.md) for detailed usage.
-
 ## CSV Format
 
 ### Input (orders.csv)
@@ -101,6 +85,79 @@ The Java agent captures:
 - **EXEC_REPORT**: Trade executions
 - **BOOK_ADD**: Orders added to book
 - **SNAPSHOT**: Order book state after each order
+
+## RAG Pipeline
+
+A Retrieval Augmented Generation (RAG) system using LlamaIndex and Claude to answer questions about order execution (from instrumentation logs) and code implementation (from Java source files).
+
+### Setup
+
+```bash
+pip install -r rag/requirements.txt
+
+export ANTHROPIC_API_KEY='your-anthropic-api-key'
+export OPENAI_API_KEY='your-openai-api-key'
+
+python3 rag/rag_query.py
+```
+
+**Note:** OpenAI API key is used only for embeddings (text-embedding-3-small), while Anthropic Claude is used as the LLM.
+
+### Commands
+
+- **`/instr <query>`** - Query instrumentation log only
+- **`/code <query>`** - Query source code only
+- **`/both <query>`** - Query both and synthesize answer (recommended)
+- **`/quit`** - Exit
+
+### Example Queries
+
+```
+/instr What orders were executed and at what prices?
+/instr Which orders had partial fills?
+/code How does the matching algorithm work?
+/code What is the order book data structure?
+/both How did the matching engine process market orders?
+/both Explain what happened when order VQ6EAOKbQdSnFkRmVUQABA was processed
+```
+
+### Architecture
+
+```
+User Query
+    ↓
+[Query Type: /instr, /code, or /both]
+    ↓
+Vector Search (OpenAI embeddings)
+    ↓
+Retrieve Relevant Context
+    ↓
+Claude (Anthropic LLM)
+    ↓
+Generate Answer
+```
+
+Two indices are built:
+- **Instrumentation Index** — execution traces from `instrumentation.log` (ORDER_IN, CALL, EXEC_REPORT, BOOK_ADD, SNAPSHOT events and function metadata)
+- **Code Index** — all Java source files from `src/` and `agent/`
+
+### Tips
+
+1. **Use `/both` for best results** — combines execution data with code understanding
+2. **Be specific** — include order IDs, function names, or specific events
+3. **Ask "why" questions** — the RAG can explain both what happened and why
+4. **Reference UUIDs** — function UUIDs from instrumentation link to code descriptions
+
+### Troubleshooting
+
+- **Missing API Keys**: Set `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables
+- **No Files Found**: Can be run from any directory; paths resolve relative to the project root automatically
+- **Rate Limits**: Wait a moment and retry
+
+### Cost Considerations
+
+- **Embeddings:** OpenAI text-embedding-3-small (~$0.00002 per 1K tokens)
+- **LLM:** Anthropic Claude (~$15 per 1M input tokens, ~$75 per 1M output tokens)
 
 ## Requirements
 

@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
+# Resolve project root (parent of rag/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
@@ -56,7 +59,9 @@ class MatchingEngineRAG:
         self.instrumentation_index = None
         self.code_index = None
 
-    def index_instrumentation_log(self, log_path: str = "instrumentation.log"):
+    def index_instrumentation_log(self, log_path: str = None):
+        if log_path is None:
+            log_path = str(PROJECT_ROOT / "instrumentation.log")
         """Index the instrumentation log file."""
         print(f"Indexing instrumentation log: {log_path}")
 
@@ -85,8 +90,8 @@ class MatchingEngineRAG:
         """Index source code files."""
         if source_dirs is None:
             source_dirs = [
-                "src/main/java/com/matching",
-                "agent/src/main/java/com/matching"
+                str(PROJECT_ROOT / "src/main/java/com/matching"),
+                str(PROJECT_ROOT / "agent/src/main/java/com/matching")
             ]
 
         print("Indexing source code...")

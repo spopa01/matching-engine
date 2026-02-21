@@ -5,11 +5,8 @@ import com.matching.model.*;
 
 import java.io.*;
 import java.math.BigDecimal;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
-import java.util.UUID;
 
 public class CSVHandler {
 
@@ -64,7 +61,7 @@ public class CSVHandler {
             throw new IllegalArgumentException("Invalid CSV format: expected 5 columns");
         }
 
-        UUID orderId = base64ToUuid(parts[0].trim());
+        String orderId = parts[0].trim();
         Side side = Side.valueOf(parts[1].trim().toUpperCase());
         OrderType orderType = OrderType.valueOf(parts[2].trim().toUpperCase());
         long quantity = Long.parseLong(parts[3].trim());
@@ -101,7 +98,7 @@ public class CSVHandler {
 
             for (ExecutionReport report : reports) {
                 StringBuilder line = new StringBuilder();
-                line.append(uuidToBase64(report.getOrderId())).append(",");
+                line.append(report.getOrderId()).append(",");
                 line.append(report.getSide()).append(",");
                 line.append(report.getExecutionType()).append(",");
                 line.append(report.getOrderSize()).append(",");
@@ -115,18 +112,4 @@ public class CSVHandler {
         }
     }
 
-    private static UUID base64ToUuid(String base64) {
-        byte[] bytes = Base64.getUrlDecoder().decode(base64);
-        ByteBuffer buffer = ByteBuffer.wrap(bytes);
-        long mostSigBits = buffer.getLong();
-        long leastSigBits = buffer.getLong();
-        return new UUID(mostSigBits, leastSigBits);
-    }
-
-    private static String uuidToBase64(UUID uuid) {
-        ByteBuffer buffer = ByteBuffer.wrap(new byte[16]);
-        buffer.putLong(uuid.getMostSignificantBits());
-        buffer.putLong(uuid.getLeastSignificantBits());
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
-    }
 }

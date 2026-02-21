@@ -1,10 +1,9 @@
 package com.matching.model;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 public class Order {
-    private final UUID orderId;
+    private final String orderId;
     private final Side side;
     private final OrderType orderType;
     private final BigDecimal price;
@@ -13,7 +12,7 @@ public class Order {
     private long cumulativeQuantity;
     private final long timestamp;
 
-    public Order(UUID orderId, Side side, OrderType orderType, BigDecimal price, long quantity) {
+    public Order(String orderId, Side side, OrderType orderType, BigDecimal price, long quantity) {
         this.orderId = orderId;
         this.side = side;
         this.orderType = orderType;
@@ -24,7 +23,7 @@ public class Order {
         this.timestamp = System.nanoTime();
     }
 
-    public UUID getOrderId() {
+    public String getOrderId() {
         return orderId;
     }
 

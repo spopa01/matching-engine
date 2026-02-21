@@ -1,10 +1,9 @@
 package com.matching.model;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 public class ExecutionReport {
-    private final UUID orderId;
+    private final String orderId;
     private final Side side;
     private final ExecutionType executionType;
     private final long orderSize;
@@ -12,7 +11,7 @@ public class ExecutionReport {
     private final long lastQuantity;
     private final long cumulativeQuantity;
 
-    public ExecutionReport(UUID orderId, Side side, ExecutionType executionType, long orderSize, BigDecimal price, long lastQuantity, long cumulativeQuantity) {
+    public ExecutionReport(String orderId, Side side, ExecutionType executionType, long orderSize, BigDecimal price, long lastQuantity, long cumulativeQuantity) {
         this.orderId = orderId;
         this.side = side;
         this.executionType = executionType;
@@ -22,7 +21,7 @@ public class ExecutionReport {
         this.cumulativeQuantity = cumulativeQuantity;
     }
 
-    public UUID getOrderId() {
+    public String getOrderId() {
         return orderId;
     }
 
