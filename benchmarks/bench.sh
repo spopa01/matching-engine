@@ -83,9 +83,11 @@ fi
 
 ORDER_COUNT=$(($(wc -l < "$INPUT") - 1))
 
-# ── output paths (all inside benchmarks/) ─────────────────────
-OUT_BASE="$SCRIPT_DIR/exec_baseline.csv"
-OUT_AGENT="$SCRIPT_DIR/exec_agent.csv"
+# ── output paths (all inside benchmarks/, postfixed with order count) ──
+OUT_BASE="$SCRIPT_DIR/exec_baseline_${ORDER_COUNT}.csv"
+OUT_AGENT="$SCRIPT_DIR/exec_agent_${ORDER_COUNT}.csv"
+OUT_LOG="$SCRIPT_DIR/instrumentation_${ORDER_COUNT}.log"
+AGENT_OPTS="-Dmatching.agent.logfile=$OUT_LOG"
 
 echo "================================================================="
 echo "  Benchmark — $ORDER_COUNT orders, $RUNS runs ($MODE)"
@@ -108,7 +110,7 @@ run_once() {
 # ── warmup (discarded) ────────────────────────────────────────
 echo "Warming up JVM..."
 run_once java -jar "$ENGINE_JAR" "$INPUT" "$OUT_BASE" > /dev/null
-run_once java -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT" > /dev/null
+run_once java $AGENT_OPTS -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT" > /dev/null
 echo ""
 
 # ── benchmark runs ────────────────────────────────────────────
@@ -119,7 +121,7 @@ if [ "$MODE" = "interleaved" ]; then
     echo "Running interleaved (baseline, agent, baseline, agent, ...)..."
     for i in $(seq 1 $RUNS); do
         t1=$(run_once java -jar "$ENGINE_JAR" "$INPUT" "$OUT_BASE")
-        t2=$(run_once java -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT")
+        t2=$(run_once java $AGENT_OPTS -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT")
         NA_TIMES+=($t1)
         AG_TIMES+=($t2)
         printf "  Run %2d: baseline=%dms  agent=%dms\n" "$i" "$t1" "$t2"
@@ -134,7 +136,7 @@ else
     echo ""
     echo "Running WITH agent..."
     for i in $(seq 1 $RUNS); do
-        t=$(run_once java -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT")
+        t=$(run_once java $AGENT_OPTS -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT")
         AG_TIMES+=($t)
         printf "  Run %2d: %dms\n" "$i" "$t"
     done
@@ -181,7 +183,7 @@ PYEOF
 # ── verify output consistency ─────────────────────────────────
 echo "Verifying output consistency..."
 java -jar "$ENGINE_JAR" "$INPUT" "$OUT_BASE" > /dev/null 2>&1
-java -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT" > /dev/null 2>&1
+java $AGENT_OPTS -javaagent:"$AGENT_JAR" -jar "$ENGINE_JAR" "$INPUT" "$OUT_AGENT" > /dev/null 2>&1
 EXEC_NO=$(wc -l < "$OUT_BASE")
 EXEC_AG=$(wc -l < "$OUT_AGENT")
 if [ "$EXEC_NO" = "$EXEC_AG" ]; then

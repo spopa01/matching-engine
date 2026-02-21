@@ -24,6 +24,9 @@ public class MethodInterceptor {
     //         -Dmatching.agent.output=file (default) writes to instrumentation.log
     public static final String OUTPUT_MODE = System.getProperty("matching.agent.output", "file");
 
+    // Config: -Dmatching.agent.logfile=path — output file path (default: instrumentation.log)
+    public static final String LOG_FILE = System.getProperty("matching.agent.logfile", "instrumentation.log");
+
     // Config: -Dmatching.agent.snapshot.levels=N — number of top price levels per side in snapshots (default 5)
     public static final int SNAPSHOT_LEVELS = Integer.parseInt(System.getProperty("matching.agent.snapshot.levels", "5"));
 
@@ -76,13 +79,13 @@ public class MethodInterceptor {
         } else {
             Writer fileWriter = null;
             try {
-                fileWriter = new BufferedWriter(new FileWriter("instrumentation.log", false), 1 << 20); // 1MB buffer
+                fileWriter = new BufferedWriter(new FileWriter(LOG_FILE, false), 1 << 20); // 1MB buffer
             } catch (IOException e) {
                 System.err.println("Failed to create instrumentation log file: " + e.getMessage());
                 fileWriter = Writer.nullWriter();
             }
             writer = new PrintWriter(fileWriter);
-            System.out.println("Agent output: file (instrumentation.log)");
+            System.out.println("Agent output: file (" + LOG_FILE + ")");
         }
         instrumentationWriter = writer;
 
