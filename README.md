@@ -125,8 +125,9 @@ python3 rag/rag_query.py
 ### Commands
 
 - **`/instr <query>`** - Query instrumentation log only
-- **`/code <query>`** - Query source code only
-- **`/both <query>`** - Query both and synthesize answer (recommended)
+- **`/code <query>`** - Query engine source code only
+- **`/agent <query>`** - Query agent source code only
+- **`/all <query>`** - Query all three sources (synthesized answer, recommended)
 - **`/quit`** - Exit
 
 ### Example Queries
@@ -136,8 +137,10 @@ python3 rag/rag_query.py
 /instr Which orders had partial fills?
 /code How does the matching algorithm work?
 /code What is the order book data structure?
-/both How did the matching engine process market orders?
-/both Explain what happened when order VQ6EAOKbQdSnFkRmVUQABA was processed
+/agent How does the SPSC ring buffer work?
+/agent How are UUIDs inlined as compile-time constants?
+/all How did the matching engine process market orders?
+/all Explain what happened when order VQ6EAOKbQdSnFkRmVUQABA was processed
 ```
 
 ### Architecture
@@ -156,9 +159,10 @@ Claude (Anthropic LLM)
 Generate Answer
 ```
 
-Two indices are built:
-- **Instrumentation Index** — execution traces from `instrumentation.log` (ORDER_IN, CALL, EXEC_REPORT, BOOK_ADD, SNAPSHOT events and function metadata)
-- **Code Index** — all Java source files from `src/` and `agent/`
+Three indices are built:
+- **Instrumentation Index** — execution traces from `instrumentation.log`
+- **Engine Code Index** — Java source files from `src/main/java/com/matching/`
+- **Agent Code Index** — Java source files from `agent/src/main/java/com/matching/`
 
 ### Tips
 

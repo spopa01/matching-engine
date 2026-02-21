@@ -47,7 +47,7 @@ python3 benchmarks/generate_orders.py 500000               # generate orders onl
 ```bash
 pip3 install -r rag/requirements.txt
 export ANTHROPIC_API_KEY='...' OPENAI_API_KEY='...'
-python3 rag/rag_query.py   # interactive CLI: /instr, /code, /both, /quit
+python3 rag/rag_query.py   # interactive CLI: /instr, /code, /agent, /all, /quit
 ```
 
 ## Architecture
@@ -74,7 +74,8 @@ Price-time priority (FIFO) order matching engine in Java 17 with a Byte Buddy in
 
 ### RAG (`rag/`)
 - `rag_query.py` — interactive CLI; paths resolve relative to project root automatically
-- Two LlamaIndex vector indices: instrumentation log + Java source files
+- Three LlamaIndex vector indices: instrumentation log, engine source, agent source
+- Commands: `/instr`, `/code`, `/agent`, `/all` (synthesizes all three)
 - OpenAI embeddings + Claude for answering
 
 ## Key Design Decisions

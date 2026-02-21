@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 RAG Pipeline for Matching Engine Analysis
-Indexes instrumentation logs and source code to answer questions about order execution and code.
+Indexes instrumentation logs, engine source code, and agent source code
+to answer questions about order execution, implementation, and instrumentation.
 """
 
 import os
@@ -27,7 +28,6 @@ class MatchingEngineRAG:
 
     def __init__(self, anthropic_api_key: Optional[str] = None, openai_api_key: Optional[str] = None):
         """Initialize RAG pipeline with Claude LLM and OpenAI embeddings."""
-        # Set API keys
         self.anthropic_api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
 
@@ -36,21 +36,18 @@ class MatchingEngineRAG:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY must be set for embeddings")
 
-        # Configure LlamaIndex with Claude
         Settings.llm = Anthropic(
             api_key=self.anthropic_api_key,
-            model="claude-opus-4-20250514",  # Latest Claude Opus
+            model="claude-opus-4-20250514",
             temperature=0.1,
             max_tokens=4096,
         )
 
-        # Configure embeddings
         Settings.embed_model = OpenAIEmbedding(
             api_key=self.openai_api_key,
             model="text-embedding-3-small"
         )
 
-        # Configure node parser
         Settings.node_parser = SimpleNodeParser.from_defaults(
             chunk_size=1024,
             chunk_overlap=20
@@ -58,21 +55,40 @@ class MatchingEngineRAG:
 
         self.instrumentation_index = None
         self.code_index = None
+        self.agent_index = None
+
+    def _index_java_dir(self, source_dir: str) -> list:
+        """Index Java files from a directory, returning documents."""
+        if not os.path.exists(source_dir):
+            print(f"  Warning: Directory not found: {source_dir}")
+            return []
+
+        reader = SimpleDirectoryReader(
+            input_dir=source_dir,
+            required_exts=[".java"],
+            recursive=True
+        )
+
+        docs = reader.load_data()
+        for doc in docs:
+            doc.metadata["source"] = "source_code"
+            doc.metadata["language"] = "java"
+
+        print(f"  ✓ Indexed {len(docs)} files from {source_dir}")
+        return docs
 
     def index_instrumentation_log(self, log_path: str = None):
+        """Index the instrumentation log file."""
         if log_path is None:
             log_path = str(PROJECT_ROOT / "instrumentation.log")
-        """Index the instrumentation log file."""
         print(f"Indexing instrumentation log: {log_path}")
 
         if not os.path.exists(log_path):
             raise FileNotFoundError(f"Instrumentation log not found: {log_path}")
 
-        # Read the log file
         with open(log_path, 'r') as f:
             log_content = f.read()
 
-        # Create a document with metadata
         doc = Document(
             text=log_content,
             metadata={
@@ -82,49 +98,36 @@ class MatchingEngineRAG:
             }
         )
 
-        # Create index
         self.instrumentation_index = VectorStoreIndex.from_documents([doc])
         print(f"✓ Indexed instrumentation log ({len(log_content)} characters)")
 
-    def index_source_code(self, source_dirs: list[str] = None):
-        """Index source code files."""
-        if source_dirs is None:
-            source_dirs = [
-                str(PROJECT_ROOT / "src/main/java/com/matching"),
-                str(PROJECT_ROOT / "agent/src/main/java/com/matching")
-            ]
+    def index_source_code(self, source_dir: str = None):
+        """Index engine source code files."""
+        if source_dir is None:
+            source_dir = str(PROJECT_ROOT / "src/main/java/com/matching")
 
-        print("Indexing source code...")
-        documents = []
-
-        for source_dir in source_dirs:
-            if not os.path.exists(source_dir):
-                print(f"  Warning: Directory not found: {source_dir}")
-                continue
-
-            # Read all Java files
-            reader = SimpleDirectoryReader(
-                input_dir=source_dir,
-                required_exts=[".java"],
-                recursive=True
-            )
-
-            docs = reader.load_data()
-
-            # Add metadata to each document
-            for doc in docs:
-                doc.metadata["source"] = "source_code"
-                doc.metadata["language"] = "java"
-
-            documents.extend(docs)
-            print(f"  ✓ Indexed {len(docs)} files from {source_dir}")
+        print("Indexing engine source code...")
+        documents = self._index_java_dir(source_dir)
 
         if not documents:
-            raise ValueError("No source code files found to index")
+            raise ValueError("No engine source code files found to index")
 
-        # Create index
         self.code_index = VectorStoreIndex.from_documents(documents)
-        print(f"✓ Indexed {len(documents)} source code files")
+        print(f"✓ Indexed {len(documents)} engine source files")
+
+    def index_agent_code(self, source_dir: str = None):
+        """Index agent source code files."""
+        if source_dir is None:
+            source_dir = str(PROJECT_ROOT / "agent/src/main/java/com/matching")
+
+        print("Indexing agent source code...")
+        documents = self._index_java_dir(source_dir)
+
+        if not documents:
+            raise ValueError("No agent source code files found to index")
+
+        self.agent_index = VectorStoreIndex.from_documents(documents)
+        print(f"✓ Indexed {len(documents)} agent source files")
 
     def query_instrumentation(self, query: str) -> str:
         """Query the instrumentation log index."""
@@ -136,7 +139,6 @@ class MatchingEngineRAG:
             response_mode="tree_summarize"
         )
 
-        # Enhance query with context
         enhanced_query = f"""Based on the instrumentation log data, answer the following question.
 The log contains execution traces with:
 - Function metadata (UUID mappings to function names and descriptions)
@@ -152,55 +154,80 @@ Question: {query}"""
         return str(response)
 
     def query_code(self, query: str) -> str:
-        """Query the source code index."""
+        """Query the engine source code index."""
         if self.code_index is None:
-            raise ValueError("Source code not indexed. Call index_source_code() first.")
+            raise ValueError("Engine source code not indexed. Call index_source_code() first.")
 
         query_engine = self.code_index.as_query_engine(
             similarity_top_k=5,
             response_mode="tree_summarize"
         )
 
-        # Enhance query with context
         enhanced_query = f"""Based on the Java source code for the matching engine, answer the following question.
 The codebase contains:
 - Matching engine core logic (order matching, execution)
 - Order book implementation (price-time priority)
 - Model classes (Order, ExecutionReport, Side, OrderType, ExecutionType)
 - CSV I/O handlers
-- Java agent for instrumentation
+- @FunctionMetadata annotation for instrumentation targeting
 
 Question: {query}"""
 
         response = query_engine.query(enhanced_query)
         return str(response)
 
-    def query_both(self, query: str) -> str:
-        """Query both instrumentation and code indices, combining results."""
-        if self.instrumentation_index is None or self.code_index is None:
-            raise ValueError("Both indices must be created first")
+    def query_agent(self, query: str) -> str:
+        """Query the agent source code index."""
+        if self.agent_index is None:
+            raise ValueError("Agent source code not indexed. Call index_agent_code() first.")
 
-        # Query both indices
+        query_engine = self.agent_index.as_query_engine(
+            similarity_top_k=5,
+            response_mode="tree_summarize"
+        )
+
+        enhanced_query = f"""Based on the Java source code for the instrumentation agent, answer the following question.
+The agent codebase contains:
+- MatchingAgent (Byte Buddy premain, class transformation, custom UUID mapping)
+- MethodInterceptor (advice class, event emission, SPSC ring buffer drain-thread)
+- SpscRingBuffer (lock-free ring buffer with VarHandle release/acquire)
+- TraceEvent (event carrier for the ring buffer)
+- ResolvedUuid (custom annotation for Byte Buddy offset mapping)
+
+Question: {query}"""
+
+        response = query_engine.query(enhanced_query)
+        return str(response)
+
+    def query_all(self, query: str) -> str:
+        """Query all three indices and synthesize a combined answer."""
+        if self.instrumentation_index is None or self.code_index is None or self.agent_index is None:
+            raise ValueError("All three indices must be created first")
+
         print("\n🔍 Querying instrumentation log...")
         instr_response = self.query_instrumentation(query)
 
-        print("\n🔍 Querying source code...")
+        print("\n🔍 Querying engine source code...")
         code_response = self.query_code(query)
 
-        # Combine responses
-        combined_query = f"""I have information from two sources about a matching engine:
+        print("\n🔍 Querying agent source code...")
+        agent_response = self.query_agent(query)
+
+        combined_query = f"""I have information from three sources about a matching engine system:
 
 1. From the execution instrumentation log:
 {instr_response}
 
-2. From the source code:
+2. From the engine source code:
 {code_response}
 
-Based on both sources, provide a comprehensive answer to: {query}
+3. From the instrumentation agent source code:
+{agent_response}
 
-Synthesize the information from both the runtime execution data and the code implementation."""
+Based on all three sources, provide a comprehensive answer to: {query}
 
-        # Use Claude to synthesize
+Synthesize the information from runtime execution data, engine implementation, and agent instrumentation code."""
+
         from llama_index.core.llms import ChatMessage
 
         messages = [
@@ -219,7 +246,6 @@ def main():
     print("Matching Engine RAG Pipeline")
     print("=" * 70)
 
-    # Initialize RAG
     try:
         rag = MatchingEngineRAG()
     except ValueError as e:
@@ -229,11 +255,11 @@ def main():
         print("  export OPENAI_API_KEY='your-key'")
         sys.exit(1)
 
-    # Index data
     print("\n📚 Indexing data...")
     try:
         rag.index_instrumentation_log()
         rag.index_source_code()
+        rag.index_agent_code()
     except Exception as e:
         print(f"\n❌ Error indexing: {e}")
         sys.exit(1)
@@ -241,12 +267,12 @@ def main():
     print("\n✅ RAG pipeline ready!")
     print("\nAvailable commands:")
     print("  /instr <query>  - Query instrumentation log only")
-    print("  /code <query>   - Query source code only")
-    print("  /both <query>   - Query both (synthesized answer)")
+    print("  /code <query>   - Query engine source code only")
+    print("  /agent <query>  - Query agent source code only")
+    print("  /all <query>    - Query all three sources (synthesized answer)")
     print("  /quit           - Exit")
     print()
 
-    # Interactive loop
     while True:
         try:
             user_input = input("\n💬 Query: ").strip()
@@ -258,7 +284,6 @@ def main():
                 print("\n👋 Goodbye!")
                 break
 
-            # Parse command
             if user_input.startswith("/instr "):
                 query = user_input[7:].strip()
                 print("\n📊 Querying instrumentation log...")
@@ -267,20 +292,25 @@ def main():
 
             elif user_input.startswith("/code "):
                 query = user_input[6:].strip()
-                print("\n💻 Querying source code...")
+                print("\n💻 Querying engine source code...")
                 response = rag.query_code(query)
                 print(f"\n{response}")
 
-            elif user_input.startswith("/both "):
-                query = user_input[6:].strip()
-                print("\n🔄 Querying both sources...")
-                response = rag.query_both(query)
+            elif user_input.startswith("/agent "):
+                query = user_input[7:].strip()
+                print("\n🔧 Querying agent source code...")
+                response = rag.query_agent(query)
+                print(f"\n{response}")
+
+            elif user_input.startswith("/all "):
+                query = user_input[5:].strip()
+                print("\n🔄 Querying all sources...")
+                response = rag.query_all(query)
                 print(f"\n{response}")
 
             else:
-                # Default to querying both
-                print("\n🔄 Querying both sources...")
-                response = rag.query_both(user_input)
+                print("\n🔄 Querying all sources...")
+                response = rag.query_all(user_input)
                 print(f"\n{response}")
 
         except KeyboardInterrupt:
