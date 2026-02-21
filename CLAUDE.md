@@ -29,11 +29,18 @@ All benchmark files live in `benchmarks/` — never use `/tmp` or project root f
 bash benchmarks/bench.sh -n 10000                          # auto-generates orders if needed
 bash benchmarks/bench.sh -n 1000000 -r 5 -m sequential     # 1M orders, 5 runs, sequential mode
 bash benchmarks/bench.sh -i benchmarks/orders_10000.csv    # use existing orders file
+bash benchmarks/bench.sh -n 500000 -s 10 -S 100            # 10 snapshot levels, every 100 orders
+bash benchmarks/bench.sh -n 1000000 -E false               # disable event emission (profiling)
 python3 benchmarks/generate_orders.py 500000               # generate orders only
 ```
 
-- `bench.sh` flags: `-n` order count, `-r` runs (default 10), `-m` interleaved|sequential, `-e`/`-a` JAR overrides
-- Order CSVs and execution CSVs are kept after each run; execution CSVs are overwritten on the next run with the same input
+- `bench.sh` flags:
+  - `-n` order count, `-i` input file, `-r` runs (default 10), `-m` interleaved|sequential
+  - `-e`/`-a` JAR overrides
+  - `-s` snapshot levels (default 5), `-S` snapshot interval (default 1)
+  - `-o` agent output mode: file|none, `-E` emit events: true|false
+- Output files are postfixed with order count (e.g. `exec_baseline_1000000.csv`, `instrumentation_1000000.log`)
+- All outputs kept after each run; overwritten on next run with same order count
 
 ## RAG Pipeline
 

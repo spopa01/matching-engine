@@ -62,6 +62,13 @@ java -javaagent:agent/target/matching-agent-1.0-SNAPSHOT.jar \
 
 This generates `instrumentation.log` with detailed execution traces.
 
+Agent system properties:
+- `-Dmatching.agent.logfile=<path>` — log output path (default: `instrumentation.log`)
+- `-Dmatching.agent.output=none` — disable file output
+- `-Dmatching.agent.snapshot.levels=N` — price levels per side in snapshots (default: 5)
+- `-Dmatching.agent.snapshot.interval=N` — emit snapshot every N orders (default: 1)
+- `-Dmatching.agent.emit=false` — skip all event emission (profiling mode)
+
 ## CSV Format
 
 ### Input (orders.csv)
@@ -76,6 +83,18 @@ VQ6EAOKbQdSnFkRmVUQABA,BUY,MARKET,12,
 orderId,side,executionType,orderSize,lastQuantity,cumulativeQuantity,price
 VQ6EAOKbQdSnFkRmVUQAAw,SELL,FULL_FILL,8,8,8,100.60
 ```
+
+## Benchmarking
+
+```bash
+bash benchmarks/bench.sh -n 10000                   # auto-generates orders, 10 interleaved runs
+bash benchmarks/bench.sh -n 1000000 -r 5             # 1M orders, 5 runs
+bash benchmarks/bench.sh -n 500000 -s 10 -S 100      # custom snapshot settings
+bash benchmarks/bench.sh -n 1000000 -E false          # disable event emission (profiling)
+python3 benchmarks/generate_orders.py 500000          # generate orders only
+```
+
+All benchmark artifacts (orders, executions, instrumentation logs) are generated in `benchmarks/` and postfixed with the order count.
 
 ## Instrumentation Events
 

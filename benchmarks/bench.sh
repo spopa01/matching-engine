@@ -10,6 +10,10 @@ RUNS=10
 MODE="interleaved"   # interleaved | sequential
 NUM_ORDERS=""
 INPUT=""
+SNAPSHOT_LEVELS=""
+SNAPSHOT_INTERVAL=""
+AGENT_OUTPUT=""
+AGENT_EMIT=""
 
 # ── usage ─────────────────────────────────────────────────────
 usage() {
@@ -26,16 +30,23 @@ Options:
   -a JAR    Agent JAR path (default: $AGENT_JAR)
   -h        Show this help
 
+Agent options:
+  -s N      Snapshot levels per side (default: 5)
+  -S N      Snapshot interval — emit every N orders (default: 1)
+  -o MODE   Agent output mode: file | none (default: file)
+  -E BOOL   Emit events: true | false (default: true)
+
 Examples:
   $0 -n 10000
   $0 -n 1000000 -r 5 -m sequential
   $0 -i benchmarks/orders_10000.csv -r 3
+  $0 -n 500000 -s 10 -S 100 -E false
 EOF
     exit 1
 }
 
 # ── parse args ────────────────────────────────────────────────
-while getopts "n:i:r:m:e:a:h" opt; do
+while getopts "n:i:r:m:e:a:s:S:o:E:h" opt; do
     case $opt in
         n) NUM_ORDERS="$OPTARG" ;;
         i) INPUT="$OPTARG" ;;
@@ -43,6 +54,10 @@ while getopts "n:i:r:m:e:a:h" opt; do
         m) MODE="$OPTARG" ;;
         e) ENGINE_JAR="$OPTARG" ;;
         a) AGENT_JAR="$OPTARG" ;;
+        s) SNAPSHOT_LEVELS="$OPTARG" ;;
+        S) SNAPSHOT_INTERVAL="$OPTARG" ;;
+        o) AGENT_OUTPUT="$OPTARG" ;;
+        E) AGENT_EMIT="$OPTARG" ;;
         h) usage ;;
         *) usage ;;
     esac
@@ -88,6 +103,10 @@ OUT_BASE="$SCRIPT_DIR/exec_baseline_${ORDER_COUNT}.csv"
 OUT_AGENT="$SCRIPT_DIR/exec_agent_${ORDER_COUNT}.csv"
 OUT_LOG="$SCRIPT_DIR/instrumentation_${ORDER_COUNT}.log"
 AGENT_OPTS="-Dmatching.agent.logfile=$OUT_LOG"
+[ -n "$SNAPSHOT_LEVELS" ]   && AGENT_OPTS="$AGENT_OPTS -Dmatching.agent.snapshot.levels=$SNAPSHOT_LEVELS"
+[ -n "$SNAPSHOT_INTERVAL" ] && AGENT_OPTS="$AGENT_OPTS -Dmatching.agent.snapshot.interval=$SNAPSHOT_INTERVAL"
+[ -n "$AGENT_OUTPUT" ]      && AGENT_OPTS="$AGENT_OPTS -Dmatching.agent.output=$AGENT_OUTPUT"
+[ -n "$AGENT_EMIT" ]        && AGENT_OPTS="$AGENT_OPTS -Dmatching.agent.emit=$AGENT_EMIT"
 
 echo "================================================================="
 echo "  Benchmark — $ORDER_COUNT orders, $RUNS runs ($MODE)"
