@@ -14,6 +14,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.LockSupport;
@@ -63,6 +64,24 @@ public class MethodInterceptor {
     // Cache: MethodHandle getters per class — Class → (fieldName → MethodHandle)
     // MethodHandle.invoke() is ~7x faster than Field.get() after JIT warmup
     private static final ConcurrentHashMap<Class<?>, ConcurrentHashMap<String, MethodHandle>> handleCache = new ConcurrentHashMap<>();
+
+    // Cache: getState() MethodHandle per class — for objects that expose state via Map
+    private static final ConcurrentHashMap<Class<?>, MethodHandle> getStateCache = new ConcurrentHashMap<>();
+
+    // Pre-resolved handles for Map-based field extraction
+    private static final MethodHandle MAP_GET;
+    private static final MethodHandle NUMBER_LONG_VALUE;
+
+    static {
+        try {
+            MAP_GET = MethodHandles.lookup().findVirtual(Map.class, "get",
+                    MethodType.methodType(Object.class, Object.class));
+            NUMBER_LONG_VALUE = MethodHandles.lookup().findVirtual(Number.class, "longValue",
+                    MethodType.methodType(long.class));
+        } catch (Throwable e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     private static volatile boolean logRunning = true;
     private static final Thread logDrainThread;
@@ -384,30 +403,59 @@ public class MethodInterceptor {
     }
 
     // Returns handle pre-adapted to (Object)->Object for reference fields
+    // Falls back to getState() → Map.get(fieldName) if the field doesn't exist on the class
     private static MethodHandle getCachedHandle(Class<?> clazz, String fieldName) throws Throwable {
         ConcurrentHashMap<String, MethodHandle> classHandles = handleCache.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>());
         MethodHandle mh = classHandles.get(fieldName);
         if (mh == null) {
-            Field f = clazz.getDeclaredField(fieldName);
-            f.setAccessible(true);
-            mh = MethodHandles.lookup().unreflectGetter(f)
-                    .asType(MethodType.methodType(Object.class, Object.class));
+            try {
+                Field f = clazz.getDeclaredField(fieldName);
+                f.setAccessible(true);
+                mh = MethodHandles.lookup().unreflectGetter(f)
+                        .asType(MethodType.methodType(Object.class, Object.class));
+            } catch (NoSuchFieldException e) {
+                MethodHandle getState = getCachedGetState(clazz);
+                MethodHandle boundGet = MethodHandles.insertArguments(MAP_GET, 1, (Object) fieldName)
+                        .asType(MethodType.methodType(Object.class, Object.class));
+                mh = MethodHandles.filterReturnValue(getState, boundGet);
+            }
             classHandles.put(fieldName, mh);
         }
         return mh;
     }
 
     // Returns handle pre-adapted to (Object)->long for primitive long fields
+    // Falls back to getState() → Map.get(fieldName) → Number.longValue() if the field doesn't exist
     private static MethodHandle getCachedHandleLong(Class<?> clazz, String fieldName) throws Throwable {
         String key = fieldName + "#long";
         ConcurrentHashMap<String, MethodHandle> classHandles = handleCache.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>());
         MethodHandle mh = classHandles.get(key);
         if (mh == null) {
-            Field f = clazz.getDeclaredField(fieldName);
-            f.setAccessible(true);
-            mh = MethodHandles.lookup().unreflectGetter(f)
-                    .asType(MethodType.methodType(long.class, Object.class));
+            try {
+                Field f = clazz.getDeclaredField(fieldName);
+                f.setAccessible(true);
+                mh = MethodHandles.lookup().unreflectGetter(f)
+                        .asType(MethodType.methodType(long.class, Object.class));
+            } catch (NoSuchFieldException e) {
+                MethodHandle getState = getCachedGetState(clazz);
+                MethodHandle boundGet = MethodHandles.insertArguments(MAP_GET, 1, (Object) fieldName)
+                        .asType(MethodType.methodType(Object.class, Object.class));
+                MethodHandle mapLookup = MethodHandles.filterReturnValue(getState, boundGet);
+                MethodHandle unbox = NUMBER_LONG_VALUE.asType(MethodType.methodType(long.class, Object.class));
+                mh = MethodHandles.filterReturnValue(mapLookup, unbox);
+            }
             classHandles.put(key, mh);
+        }
+        return mh;
+    }
+
+    // Returns cached getState() handle adapted to (Object) -> Object for Map-returning methods
+    private static MethodHandle getCachedGetState(Class<?> clazz) throws Throwable {
+        MethodHandle mh = getStateCache.get(clazz);
+        if (mh == null) {
+            mh = MethodHandles.lookup().unreflect(clazz.getMethod("getState"))
+                    .asType(MethodType.methodType(Object.class, Object.class));
+            getStateCache.put(clazz, mh);
         }
         return mh;
     }
